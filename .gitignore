@@ -1,0 +1,30 @@
+# Python Virtual Environment (NEVER push to GitHub - contains machine-specific binaries)
+venv/
+env/
+ENV/
+.venv/
+
+# Byte-compiled / optimized files (Python's internal speed-up files)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables & Secrets (CRITICAL: NEVER push API keys or passwords!)
+.env
+*.env
+.env.local
+
+# OS Specific Temporary Files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor Cache
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test & Coverage Outputs
+.pytest_cache/
+.coverage
+htmlcov/
