@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from typing import List, Optional
 from app.schemas.outbox import (
     QueueEmailRequest, 
@@ -6,7 +6,7 @@ from app.schemas.outbox import (
     OutboxStats, 
     OutboxStatus
 )
-from app.services.outbox_dispatcher import outbox_dispatcher_service
+from app.services.outbox_dispatcher import outbox_dispatcher_service, LiveSendingUnavailableError
 
 router = APIRouter()
 
@@ -15,13 +15,17 @@ router = APIRouter()
     response_model=OutboxItem,
     tags=["Outbox & Safeguards"],
     summary="Queue or draft an outreach email",
-    description="Adds an approved pitch to the outbox pipeline. In 'draft' mode, creates a safe draft. In 'live_send' mode, checks daily velocity limits."
+    description="Stores an in-memory draft or explicit simulation. Live sending returns 503 until a provider is connected.",
+    responses={503: {"description": "Live sending is not configured"}},
 )
 async def queue_email(payload: QueueEmailRequest):
     """
     POST endpoint to queue or draft an outreach message.
     """
-    return outbox_dispatcher_service.queue_message(payload)
+    try:
+        return outbox_dispatcher_service.queue_message(payload)
+    except LiveSendingUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 @router.get(
     "/items",

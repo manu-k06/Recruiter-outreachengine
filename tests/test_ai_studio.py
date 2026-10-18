@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+from pathlib import Path
 from app.main import app
 
 async def run_ai_studio_tests():
@@ -10,7 +11,7 @@ async def run_ai_studio_tests():
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         # Test 1: Parse Markdown Resume
         print("\n--- Test 1: Parse Markdown Resume (.md) ---")
-        with open("sample_resume.md", "r", encoding="utf-8") as f:
+        with (Path(__file__).resolve().parents[1] / "sample_resume.md").open("r", encoding="utf-8") as f:
             resume_md = f.read()
 
         res_resume = await client.post("/api/v1/resume/parse-markdown", json={"markdown_content": resume_md})

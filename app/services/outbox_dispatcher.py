@@ -11,11 +11,13 @@ from app.schemas.outbox import (
 )
 from app.core.config import settings
 
+class LiveSendingUnavailableError(RuntimeError):
+    """No delivery provider exists yet; never manufacture a success result."""
+
+
 class OutboxDispatcherService:
     """
-    Outbox Dispatcher & Deliverability Guardian.
-    Manages cold email dispatch, enforces strict daily send caps to avoid spam blacklists,
-    and supports safe 'Draft First' workflows.
+    Temporary draft and simulation storage. No email is delivered by this service.
     """
 
     def __init__(self, daily_limit: int = 20):
@@ -52,14 +54,18 @@ class OutboxDispatcherService:
             remaining_today=remaining,
             total_drafts=drafts,
             total_queued=queued,
-            total_sent=total_sent
+            total_sent=total_sent,
+            total_simulated=sum(i.status == OutboxStatus.SIMULATED for i in self._outbox.values()),
         )
 
     def queue_message(self, request: QueueEmailRequest) -> OutboxItem:
         """
-        Queues or drafts an outreach message with automated rate-limit safeguards.
+        Save a draft or an explicitly simulated message without recording delivery.
         """
-        item_id = str(uuid.uuid4())[:8]
+        # Reject before creating any record so failed requests cannot look delivered.
+        if request.mode == DispatchMode.LIVE_SEND:
+            raise LiveSendingUnavailableError("Live sending is unavailable. Save a draft or choose simulate; no mail provider is connected.")
+        item_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
         # Mode 1: Draft Mode (Safe review mode)
@@ -73,30 +79,12 @@ class OutboxDispatcherService:
                 body=request.body,
                 status=OutboxStatus.DRAFT,
                 created_at=now,
-                note="Saved as reviewable draft. Ready to inspect before sending."
+                note="Draft stored in memory only; it will be lost on restart. No email was sent."
             )
             self._outbox[item_id] = item
             return item
 
-        # Mode 2: Live Send Mode
-        sent_today = self.get_sent_today_count()
-        if sent_today >= self.daily_limit:
-            # Safeguard triggered! Prevent spam flagging by holding until tomorrow
-            item = OutboxItem(
-                id=item_id,
-                recipient_email=request.recipient_email,
-                recipient_name=request.recipient_name,
-                company_name=request.company_name,
-                subject_line=request.subject_line,
-                body=request.body,
-                status=OutboxStatus.QUEUED_FOR_TOMORROW,
-                created_at=now,
-                note=f"Daily safeguard limit ({self.daily_limit}/day) reached. Held in queue for tomorrow to protect domain reputation."
-            )
-            self._outbox[item_id] = item
-            return item
-
-        # Within safe daily limit: dispatch!
+        # Simulation never consumes real sending quota or schedules future delivery.
         item = OutboxItem(
             id=item_id,
             recipient_email=request.recipient_email,
@@ -104,10 +92,10 @@ class OutboxDispatcherService:
             company_name=request.company_name,
             subject_line=request.subject_line,
             body=request.body,
-            status=OutboxStatus.SENT,
+            status=OutboxStatus.SIMULATED,
             created_at=now,
-            sent_at=now,
-            note="Dispatched successfully within daily rate limits."
+            sent_at=None,
+            note="Simulation only. No email was sent or scheduled. This record is lost on restart."
         )
         self._outbox[item_id] = item
         return item

@@ -13,8 +13,8 @@ router = APIRouter()
     "/review",
     response_model=ReviewPitchResponse,
     tags=["AI Studio & Reviewer"],
-    summary="Review and score a cold outreach email",
-    description="Scores pitch on Brevity, Personalization, and Call-to-Action. Provides actionable advice to maximize response rates."
+    summary="Review a cold outreach email using basic rules",
+    description="Provides heuristic writing feedback. Custom guidelines and factual claims need manual review; this is not approval to send."
 )
 async def review_pitch(payload: ReviewPitchRequest):
     return ai_reviewer_service.review_pitch(payload)
@@ -24,7 +24,7 @@ async def review_pitch(payload: ReviewPitchRequest):
     response_model=RefinePitchResponse,
     tags=["AI Studio & Reviewer"],
     summary="Refine or rewrite an email with custom instructions",
-    description="Applies prompt instructions (e.g. 'Make it punchier', 'Highlight Cineforge') to polish the cold email."
+    description="Shortens supported filler phrases while preserving candidate facts. Unsupported instructions are reported for manual editing. No AI model is called."
 )
 async def refine_pitch(payload: RefinePitchRequest):
     return ai_reviewer_service.refine_pitch(payload)

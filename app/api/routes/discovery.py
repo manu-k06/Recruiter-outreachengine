@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Query
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from typing import Optional
 from app.schemas.recruiter import DiscoverRecruitersRequest, DiscoverRecruitersResponse
 from app.services.recruiter_discovery import recruiter_discovery_service
@@ -32,18 +34,19 @@ async def discover_recruiters_post(payload: DiscoverRecruitersRequest):
     description="Example: /api/v1/discover-recruiters?company=Stripe&role=Technical%20Recruiter"
 )
 async def discover_recruiters_get(
-    company: str = Query(..., description="Target company name, e.g. Stripe"),
-    role: str = Query(default="Technical Recruiter", description="Role to target"),
-    domain: Optional[str] = Query(default=None, description="Optional custom domain, e.g. stripe.com"),
+    company: str = Query(..., max_length=200, description="Target company name, e.g. Stripe"),
+    role: str = Query(default="Technical Recruiter", max_length=200, description="Role to target"),
+    domain: Optional[str] = Query(default=None, max_length=253, description="Optional custom domain, e.g. stripe.com"),
     max_results: int = Query(default=3, ge=1, le=10)
 ):
     """
     GET endpoint for rapid testing via browser URL.
     """
-    result = await recruiter_discovery_service.discover(
-        company=company,
-        role_keyword=role,
-        custom_domain=domain,
-        max_results=max_results
-    )
-    return result
+    # Reuse the POST model so both routes apply identical trimming and validation.
+    try:
+        payload = DiscoverRecruitersRequest(company=company, role_keyword=role, company_domain=domain, max_results=max_results)
+    except ValidationError as exc:
+        names = {"role_keyword": "role", "company_domain": "domain"}
+        errors = [{**error, "loc": ("query", names.get(error["loc"][0], error["loc"][0]), *error["loc"][1:])} for error in exc.errors()]
+        raise RequestValidationError(errors) from exc
+    return await discover_recruiters_post(payload)

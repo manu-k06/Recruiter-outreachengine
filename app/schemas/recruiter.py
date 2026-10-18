@@ -1,21 +1,22 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from app.schemas.inputs import ShortText, DomainName
 
 class DiscoverRecruitersRequest(BaseModel):
     """
     Search input form: what the user requests from the discovery engine.
     """
-    company: str = Field(
+    company: ShortText = Field(
         ..., 
         description="Target company name", 
         examples=["Stripe", "Datadog", "Vercel"]
     )
-    role_keyword: str = Field(
+    role_keyword: ShortText = Field(
         default="Technical Recruiter", 
         description="Recruiter role or title to target (e.g. 'Technical Recruiter', 'Head of Talent')",
         examples=["Technical Recruiter", "Talent Acquisition"]
     )
-    company_domain: Optional[str] = Field(
+    company_domain: Optional[DomainName] = Field(
         default=None, 
         description="Optional custom domain (e.g. stripe.com). If omitted, the engine infers it.",
         examples=["stripe.com"]
@@ -42,11 +43,11 @@ class RecruiterLead(BaseModel):
     # Email generation & verification diagnostics
     candidate_emails: List[str] = Field(
         default_factory=list, 
-        description="Generated email variations tested (e.g. first.last@company.com)"
+        description="Unconfirmed email guesses; only the first pattern is currently probed"
     )
     recommended_email: Optional[str] = Field(
         default=None, 
-        description="The highest-confidence verified email address for this person."
+        description="Unset until address ownership can be established; mailbox acceptance alone is insufficient"
     )
     deliverability_score: int = Field(
         default=0, 
@@ -67,3 +68,4 @@ class DiscoverRecruitersResponse(BaseModel):
     company_domain: str
     total_found: int
     leads: List[RecruiterLead] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)

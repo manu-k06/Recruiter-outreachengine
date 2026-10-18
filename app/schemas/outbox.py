@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
+from app.schemas.inputs import ShortText, BodyText
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
@@ -7,8 +8,9 @@ class DispatchMode(str, Enum):
     """
     How the user wants the outreach message handled.
     """
-    DRAFT = "draft"          # Safe mode: saves to reviewable outbox / Gmail drafts
-    LIVE_SEND = "live_send"  # Sends automatically if within daily rate limits
+    DRAFT = "draft"          # Saved in this process only, not in a mail account.
+    SIMULATE = "simulate"    # Preview dispatch without sending or using quota.
+    LIVE_SEND = "live_send"  # Rejected until a real provider is configured.
 
 class OutboxStatus(str, Enum):
     DRAFT = "draft"
@@ -16,16 +18,17 @@ class OutboxStatus(str, Enum):
     QUEUED_FOR_TOMORROW = "queued_for_tomorrow"
     SENT = "sent"
     FAILED = "failed"
+    SIMULATED = "simulated"
 
 class QueueEmailRequest(BaseModel):
     """
     Input to queue or draft an email.
     """
-    recipient_email: str = Field(..., examples=["sarah.jenkins@stripe.com"])
-    recipient_name: str = Field(..., examples=["Sarah Jenkins"])
-    company_name: str = Field(..., examples=["Stripe"])
-    subject_line: str = Field(..., examples=["Quick note regarding Full-Stack Engineer @ Stripe"])
-    body: str
+    recipient_email: EmailStr = Field(..., examples=["sarah.jenkins@stripe.com"])
+    recipient_name: ShortText = Field(..., examples=["Sarah Jenkins"])
+    company_name: ShortText = Field(..., examples=["Stripe"])
+    subject_line: ShortText = Field(..., examples=["Quick note regarding Full-Stack Engineer @ Stripe"])
+    body: BodyText
     mode: DispatchMode = Field(default=DispatchMode.DRAFT)
 
 class OutboxItem(BaseModel):
@@ -53,3 +56,4 @@ class OutboxStats(BaseModel):
     total_drafts: int
     total_queued: int
     total_sent: int
+    total_simulated: int = 0

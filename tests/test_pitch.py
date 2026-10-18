@@ -44,7 +44,9 @@ async def run_pitch_tests():
         res2 = await client.post("/api/v1/generate-pitch", json=payload)
         data2 = res2.json()
         assert res2.status_code == 200
-        assert "architecture" in data2["body"]
+        assert "Relevant experience:" in data2["body"]
+        assert "Python" in data2["body"]
+        assert "I've been following" not in data2["body"]
         print("Technical Tone Subject:", data2["subject_line"])
 
     print("\n==========================================")

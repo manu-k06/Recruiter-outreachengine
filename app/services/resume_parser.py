@@ -1,114 +1,94 @@
 import re
-from typing import List, Optional
+from urllib.parse import urlsplit
+
 from app.schemas.resume import ParsedResume, ProjectItem
 
+
 class ResumeParserService:
-    """
-    Parses Markdown (.md) formatted resumes into structured models.
-    Supports headings (#, ##), bullet lists (*, -), and markdown links ([text](url)).
-    """
+    """Extract supported Markdown sections; never fill gaps with sample facts."""
 
     def parse_markdown(self, markdown_text: str) -> ParsedResume:
         lines = markdown_text.strip().splitlines()
-
-        # 1. Extract Name (Typically the first # Header or first line)
-        name = "Candidate"
+        name = None
+        github_url = None
+        portfolio_url = None
         for line in lines:
-            line_s = line.strip()
-            if line_s.startswith("# "):
-                name = line_s.replace("# ", "").strip()
-                break
-
-        # 2. Extract Links (GitHub, Portfolio, Email)
-        github_match = re.search(r"https?://(?:www\.)?github\.com/[a-zA-Z0-9_-]+", markdown_text, re.IGNORECASE)
-        portfolio_match = re.search(r"https?://[a-zA-Z0-9_.-]+\.(?:app|space|dev|io|com)", markdown_text, re.IGNORECASE)
+            if name is None and line.strip().startswith("# "):
+                name = line.strip()[2:].strip() or None
+            urls = re.findall(r"https?://[^\s<>\)\]]+", line)
+            for url in urls:
+                url = url.rstrip(".,")
+                host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+                if host == "github.com" and github_url is None:
+                    github_url = url
+                if portfolio_url is None and host not in {"github.com", "linkedin.com"} and re.search(r"\b(portfolio|website)\b", line, re.I):
+                    portfolio_url = url
         email_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", markdown_text)
+        skills, projects = [], []
+        section = None
+        project = None
+        description = []
 
-        github_url = github_match.group(0) if github_match else None
-        portfolio_url = portfolio_match.group(0) if portfolio_match else None
-        email = email_match.group(0) if email_match else None
-
-        # 3. Extract Skills Section
-        skills: List[str] = []
-        in_skills = False
-        for line in lines:
-            line_s = line.strip()
-            if re.match(r"^#{1,3}\s+(?:Technical\s+)?Skills", line_s, re.IGNORECASE):
-                in_skills = True
-                continue
-            elif in_skills and line_s.startswith("#"):
-                # Hit next header
-                in_skills = False
-            elif in_skills and line_s:
-                # Remove bullets, colons, bold tags
-                cleaned = re.sub(r"^[-*•]\s*", "", line_s)
-                cleaned = re.sub(r"\*\*.*?\*\*:", "", cleaned)
-                for item in re.split(r"[,;|/]", cleaned):
-                    clean_item = item.strip()
-                    if clean_item and len(clean_item) < 30 and clean_item not in skills:
-                        skills.append(clean_item)
-
-        # Fallback default skills if none explicitly parsed
-        if not skills:
-            skills = ["Python", "FastAPI", "React", "Supabase", "Git"]
-
-        # 4. Extract Projects
-        projects: List[ProjectItem] = []
-        in_projects = False
-        current_project_title = None
-        current_desc = []
-        current_stack = []
+        def finish_project():
+            if project is not None:
+                project.description = " ".join(description).strip()
+                projects.append(project)
 
         for line in lines:
-            line_s = line.strip()
-            if re.match(r"^#{1,2}\s+Projects", line_s, re.IGNORECASE):
-                in_projects = True
+            text = line.strip()
+            heading = re.match(r"^(#{1,3})\s+(.+)$", text)
+            if heading and len(heading[1]) <= 2:
+                finish_project()
+                project, description = None, []
+                title = heading[2].strip().lower()
+                if title in {"skills", "technical skills"}:
+                    section = "skills"
+                elif title in {"projects", "featured projects", "selected projects"}:
+                    section = "projects"
+                else:
+                    section = None
                 continue
-            elif in_projects and line_s.startswith("## ") and not line_s.lower().startswith("## project"):
-                in_projects = False
-            elif in_projects:
-                # Subheaders like ### Cineforge or - **Cineforge**:
-                project_header = re.match(r"^###\s+(.+)$", line_s) or re.match(r"^[-*]\s+\*\*([^*]+)\*\*[:\-]?\s*(.*)$", line_s)
-                if project_header:
-                    if current_project_title:
-                        projects.append(ProjectItem(
-                            title=current_project_title,
-                            tech_stack=current_stack or skills[:3],
-                            description=" ".join(current_desc).strip()
-                        ))
-                        current_desc = []
-                        current_stack = []
-                    
-                    current_project_title = project_header.group(1).strip()
-                    if len(project_header.groups()) > 1 and project_header.group(2):
-                        current_desc.append(project_header.group(2).strip())
-                elif current_project_title and line_s:
-                    current_desc.append(re.sub(r"^[-*]\s*", "", line_s))
+            if not text or text == "---":
+                continue
+            if section == "skills":
+                cleaned = re.sub(r"^[-*•]\s*", "", text)
+                cleaned = re.sub(r"^\*\*[^*]+\*\*\s*:?\s*", "", cleaned)
+                for item in re.split(r"[,;|]", cleaned):
+                    item = item.strip()
+                    if item and item not in skills:
+                        skills.append(item)
+            elif section == "projects":
+                # Metadata bullets belong to a project, not to new project headings.
+                metadata = re.match(r"^[-*]\s+\*\*(Tech Stack|Live Platform|Repository|Link):?\*\*\s*:?\s*(.*)$", text, re.I)
+                if metadata:
+                    if project is not None:
+                        label, value = metadata.groups()
+                        if label.lower() == "tech stack":
+                            project.tech_stack = [s.strip() for s in value.split(",") if s.strip()]
+                        elif project.link is None:
+                            match = re.search(r"https?://[^\s)]+", value)
+                            if match:
+                                project.link = match[0]
+                    continue
+                project_heading = re.match(r"^###\s+(.+)$", text) or re.match(r"^[-*]\s+\*\*([^*]+)\*\*[:\-]?\s*(.*)$", text)
+                if project_heading:
+                    finish_project()
+                    project = ProjectItem(title=project_heading[1], description="")
+                    description = [project_heading[2]] if len(project_heading.groups()) > 1 and project_heading[2] else []
+                elif project is not None:
+                    description.append(re.sub(r"^[-*]\s*", "", text))
+        finish_project()
 
-        if current_project_title:
-            projects.append(ProjectItem(
-                title=current_project_title,
-                tech_stack=current_stack or skills[:3],
-                description=" ".join(current_desc).strip()
-            ))
-
-        # Default fallback project if none found
-        if not projects:
-            projects.append(ProjectItem(
-                title="Cineforge",
-                tech_stack=["React", "FastAPI", "Supabase", "Gemini AI"],
-                description="Intelligent movie streaming and discovery platform with AI plot-based search."
-            ))
-
+        warnings = ["Confirm the extracted profile before using it in a pitch. Target role is not inferred."]
+        for value, warning in ((name, "No name heading was found."), (skills, "No skills were extracted from a Skills section."), (projects, "No projects were extracted from a Projects section.")):
+            if not value:
+                warnings.append(warning)
         return ParsedResume(
-            name=name,
-            target_role="Full-Stack / Python & AI Engineer",
-            email=email,
-            github_url=github_url,
-            portfolio_url=portfolio_url,
-            skills=skills,
-            projects=projects,
-            raw_markdown=markdown_text
+            name=name, target_role=None,
+            email=email_match[0] if email_match else None,
+            github_url=github_url, portfolio_url=portfolio_url,
+            skills=skills, projects=projects, raw_markdown=markdown_text, warnings=warnings,
         )
+
 
 resume_parser_service = ResumeParserService()

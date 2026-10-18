@@ -13,23 +13,6 @@ class RecruiterDiscoveryService:
     extracts names, generates corporate email patterns, and verifies deliverability.
     """
 
-    # Realistic sample database of tech company talent teams (fallback/cache for high reliability)
-    CURATED_TALENT_DIRECTORY = {
-        "stripe": [
-            ("Sarah Jenkins", "Lead Technical Recruiter", "stripe.com"),
-            ("Marcus Vance", "Engineering Talent Partner", "stripe.com"),
-            ("Chloe Patel", "Senior Technical Recruiter - Infrastructure", "stripe.com")
-        ],
-        "datadog": [
-            ("Elena Rostova", "Senior Tech Recruiter", "datadoghq.com"),
-            ("David Kim", "Technical Recruiting Lead", "datadoghq.com")
-        ],
-        "vercel": [
-            ("Alex Morgan", "Engineering Talent Acquisition", "vercel.com"),
-            ("Samira Khan", "Lead Technical Recruiter", "vercel.com")
-        ]
-    }
-
     def infer_domain(self, company: str, custom_domain: Optional[str] = None) -> str:
         """
         Infers the primary domain name from a company name if not provided.
@@ -49,6 +32,8 @@ class RecruiterDiscoveryService:
         Example: 'Sarah Jenkins' -> ('Sarah', 'Jenkins')
         """
         parts = full_name.strip().split()
+        if not parts:
+            return "", ""
         if len(parts) == 1:
             return parts[0], ""
         return parts[0], " ".join(parts[1:])
@@ -126,8 +111,9 @@ class RecruiterDiscoveryService:
                         extracted_profiles.append((name.strip(), title.strip()))
                         if len(extracted_profiles) >= max_results:
                             break
-        except Exception:
-            pass  # Fallback gracefully to curated profiles if search engine blocks network
+        except httpx.HTTPError:
+            # Unavailable search stays empty; never replace it with sample people.
+            return []
 
         return extracted_profiles
 
@@ -141,27 +127,21 @@ class RecruiterDiscoveryService:
         """
         Main pipeline:
         1. Injects/infers domain
-        2. Discovers recruiter candidates (via live search or curated directory)
+        2. Discovers recruiter candidates from live search only
         3. Generates corporate email patterns
         4. Verifies deliverability with Module 2 engine
         """
         domain = self.infer_domain(company, custom_domain)
-        company_key = company.strip().lower()
+        warnings = ["Search snippets do not confirm current employment or address ownership. Email patterns are guesses, not recommendations."]
+        if not custom_domain:
+            warnings.append("Company domain is inferred and must be confirmed before outreach.")
 
         # Step A: Discover Raw Names & Titles
         raw_candidates = await self.search_public_profiles(company, role_keyword, max_results)
 
-        # Fallback to curated talent directory if live search returned nothing (e.g. rate-limit or offline)
-        if not raw_candidates and company_key in self.CURATED_TALENT_DIRECTORY:
-            for item in self.CURATED_TALENT_DIRECTORY[company_key][:max_results]:
-                raw_candidates.append((item[0], item[1]))
-
-        # If still empty, provide realistic baseline talent leads for that company
+        # An empty or unavailable search is a real result, not a reason to invent people.
         if not raw_candidates:
-            raw_candidates = [
-                (f"Alex Morgan", f"Lead {role_keyword}"),
-                (f"Taylor Reed", f"Senior {role_keyword}")
-            ]
+            warnings.append("No recruiter profiles were extracted. Search may be unavailable or have no matching results.")
 
         # Step B: Process each recruiter lead
         leads: List[RecruiterLead] = []
@@ -170,14 +150,13 @@ class RecruiterDiscoveryService:
             first, last = self.split_name(full_name)
             candidate_emails = self.generate_email_patterns(first, last, domain)
             
-            # Primary recommended email is usually the first.last pattern
-            recommended = candidate_emails[0] if candidate_emails else None
+            probe_email = candidate_emails[0] if candidate_emails else None
 
             # Verify the recommended email through our Module 2 Deliverability Engine!
             deliverability_score = 0
             status_str = "unverified"
-            if recommended:
-                verification = await email_verifier_service.verify(recommended)
+            if probe_email:
+                verification = await email_verifier_service.verify(probe_email)
                 deliverability_score = verification.deliverability_score
                 status_str = verification.status.value
 
@@ -189,7 +168,7 @@ class RecruiterDiscoveryService:
                 company=company,
                 company_domain=domain,
                 candidate_emails=candidate_emails,
-                recommended_email=recommended,
+                recommended_email=None,
                 deliverability_score=deliverability_score,
                 status=status_str
             )
@@ -199,7 +178,8 @@ class RecruiterDiscoveryService:
             company=company,
             company_domain=domain,
             total_found=len(leads),
-            leads=leads
+            leads=leads,
+            warnings=warnings,
         )
 
 # Singleton instance

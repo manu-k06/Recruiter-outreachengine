@@ -1,6 +1,8 @@
 import asyncio
 import httpx
+from unittest.mock import AsyncMock, patch
 from app.main import app
+from app.services.email_verifier import email_verifier_service
 
 async def run_discovery_tests():
     """
@@ -14,7 +16,9 @@ async def run_discovery_tests():
             "role_keyword": "Technical Recruiter",
             "max_results": 2
         }
-        res = await client.post("/api/v1/discover-recruiters", json=payload)
+        verification = await email_verifier_service.verify("not-an-email")
+        with patch("app.services.recruiter_discovery.recruiter_discovery_service.search_public_profiles", new=AsyncMock(return_value=[("Sam Smith", "Technical Recruiter")])), patch.object(email_verifier_service, "verify", new=AsyncMock(return_value=verification)):
+            res = await client.post("/api/v1/discover-recruiters", json=payload)
         data = res.json()
         
         print(f"Company: {data['company']} | Domain: {data['company_domain']}")
@@ -32,10 +36,10 @@ async def run_discovery_tests():
             print(f"  Generated Variations: {lead['candidate_emails']}")
             print(f"  Deliverability Score: {lead['deliverability_score']}/100 ({lead['status']})")
             
-            assert lead["recommended_email"] is not None
+            assert lead["recommended_email"] is None
             assert len(lead["candidate_emails"]) >= 2
             # Check domain matches
-            assert "stripe.com" in lead["recommended_email"]
+            assert all(email.endswith("@stripe.com") for email in lead["candidate_emails"])
 
     print("\n==========================================")
     print(">>> MODULE 3 DISCOVERY TESTS PASSED! <<<")
