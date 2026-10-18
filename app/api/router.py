@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import health, verifier, discovery, pitch, outbox, resume, ai_studio
+from app.api.routes import health, verifier, discovery, pitch, outbox, resume, ai_studio, saved, workflow
 
 api_router = APIRouter()
 
@@ -11,3 +11,5 @@ api_router.include_router(pitch.router, prefix="", tags=["Pitch Generation"])
 api_router.include_router(resume.router, prefix="/resume", tags=["Resume & Profile"])
 api_router.include_router(ai_studio.router, prefix="/ai", tags=["AI Studio & Reviewer"])
 api_router.include_router(outbox.router, prefix="/outbox", tags=["Outbox & Safeguards"])
+api_router.include_router(saved.router)
+api_router.include_router(workflow.router)

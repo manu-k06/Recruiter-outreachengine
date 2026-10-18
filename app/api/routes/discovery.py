@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
+from starlette.concurrency import run_in_threadpool
+from app.api.dependencies import get_store
+from app.core.storage import SQLiteStore
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from typing import Optional
@@ -14,7 +17,7 @@ router = APIRouter()
     summary="Discover recruiters for a target company",
     description="Discovers recruiter contacts, parses names/titles, generates corporate email patterns, and verifies deliverability."
 )
-async def discover_recruiters_post(payload: DiscoverRecruitersRequest):
+async def discover_recruiters_post(payload: DiscoverRecruitersRequest, store: SQLiteStore = Depends(get_store)):
     """
     POST endpoint for recruiter discovery.
     """
@@ -24,7 +27,8 @@ async def discover_recruiters_post(payload: DiscoverRecruitersRequest):
         custom_domain=payload.company_domain,
         max_results=payload.max_results
     )
-    return result
+    saved = await run_in_threadpool(store.save_discovery, payload, result)
+    return saved.result
 
 @router.get(
     "/discover-recruiters",
@@ -37,7 +41,8 @@ async def discover_recruiters_get(
     company: str = Query(..., max_length=200, description="Target company name, e.g. Stripe"),
     role: str = Query(default="Technical Recruiter", max_length=200, description="Role to target"),
     domain: Optional[str] = Query(default=None, max_length=253, description="Optional custom domain, e.g. stripe.com"),
-    max_results: int = Query(default=3, ge=1, le=10)
+    max_results: int = Query(default=3, ge=1, le=10),
+    store: SQLiteStore = Depends(get_store),
 ):
     """
     GET endpoint for rapid testing via browser URL.
@@ -49,4 +54,4 @@ async def discover_recruiters_get(
         names = {"role_keyword": "role", "company_domain": "domain"}
         errors = [{**error, "loc": ("query", names.get(error["loc"][0], error["loc"][0]), *error["loc"][1:])} for error in exc.errors()]
         raise RequestValidationError(errors) from exc
-    return await discover_recruiters_post(payload)
+    return await discover_recruiters_post(payload, store)

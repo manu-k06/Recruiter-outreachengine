@@ -155,6 +155,7 @@ class RecruiterDiscoveryService:
             # Verify the recommended email through our Module 2 Deliverability Engine!
             deliverability_score = 0
             status_str = "unverified"
+            verification = None
             if probe_email:
                 verification = await email_verifier_service.verify(probe_email)
                 deliverability_score = verification.deliverability_score
@@ -170,7 +171,8 @@ class RecruiterDiscoveryService:
                 candidate_emails=candidate_emails,
                 recommended_email=None,
                 deliverability_score=deliverability_score,
-                status=status_str
+                status=status_str,
+                verification=verification,
             )
             leads.append(lead)
 

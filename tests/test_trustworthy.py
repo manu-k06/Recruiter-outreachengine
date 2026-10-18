@@ -1,26 +1,27 @@
 """Offline regression checks for truthful results and preserved candidate facts."""
 import unittest
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from app.main import app
+from app.main import create_application
 from app.services.email_verifier import email_verifier_service
-from app.services.outbox_dispatcher import outbox_dispatcher_service
 
 
 class TrustworthyResultsTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        app = create_application(Path(self.directory.name) / "test.sqlite3")
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
             base_url="http://testserver",
         )
-        outbox_dispatcher_service._outbox.clear()
 
     async def asyncTearDown(self):
         await self.client.aclose()
-        outbox_dispatcher_service._outbox.clear()
 
     def message(self, mode="draft"):
         return dict(recipient_email="sam@example.com", recipient_name="Sam",

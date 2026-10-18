@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.schemas.inputs import ShortText, DomainName
+from app.schemas.verifier import VerifyEmailResponse
 
 class DiscoverRecruitersRequest(BaseModel):
     """
@@ -59,6 +60,7 @@ class RecruiterLead(BaseModel):
         default="unverified", 
         description="Deliverability status: 'valid', 'risky', or 'unverified'"
     )
+    verification: Optional[VerifyEmailResponse] = None
 
 class DiscoverRecruitersResponse(BaseModel):
     """
@@ -69,3 +71,4 @@ class DiscoverRecruitersResponse(BaseModel):
     total_found: int
     leads: List[RecruiterLead] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
+    discovery_id: Optional[str] = None

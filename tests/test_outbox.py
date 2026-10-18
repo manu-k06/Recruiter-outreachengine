@@ -1,12 +1,14 @@
 """Outbox smoke check: no mode can claim delivery without a provider."""
 import asyncio
 import httpx
-from app.main import app
-from app.services.outbox_dispatcher import outbox_dispatcher_service
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from app.main import create_application
 
 
 async def run_outbox_tests():
-    outbox_dispatcher_service._outbox.clear()
+    directory = TemporaryDirectory()
+    app = create_application(Path(directory.name) / "test.sqlite3")
     try:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -28,7 +30,7 @@ async def run_outbox_tests():
             assert stats["total_simulated"] == 1
             assert len((await client.get("/api/v1/outbox/items")).json()) == 2
     finally:
-        outbox_dispatcher_service._outbox.clear()
+        directory.cleanup()
     print("Outbox draft/simulation checks passed; no email sent.")
 
 

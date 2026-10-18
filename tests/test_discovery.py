@@ -1,13 +1,21 @@
 import asyncio
 import httpx
 from unittest.mock import AsyncMock, patch
-from app.main import app
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from app.main import create_application
 from app.services.email_verifier import email_verifier_service
 
 async def run_discovery_tests():
     """
     Test suite for Module 3: Recruiter Discovery & Lead Extraction.
     """
+    with TemporaryDirectory() as directory:
+        app = create_application(Path(directory) / "test.sqlite3")
+        await check_discovery(app)
+
+
+async def check_discovery(app):
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         print("\n--- Test 1: Discover Recruiters for Stripe ---")

@@ -8,7 +8,7 @@ class DispatchMode(str, Enum):
     """
     How the user wants the outreach message handled.
     """
-    DRAFT = "draft"          # Saved in this process only, not in a mail account.
+    DRAFT = "draft"          # Persisted locally, not in a mail account.
     SIMULATE = "simulate"    # Preview dispatch without sending or using quota.
     LIVE_SEND = "live_send"  # Rejected until a real provider is configured.
 
@@ -45,6 +45,11 @@ class OutboxItem(BaseModel):
     created_at: datetime
     sent_at: Optional[datetime] = None
     note: Optional[str] = None
+    profile_id: Optional[str] = None
+    discovery_id: Optional[str] = None
+    lead_index: Optional[int] = None
+    version: int = 1
+    updated_at: Optional[datetime] = None
 
 class OutboxStats(BaseModel):
     """
